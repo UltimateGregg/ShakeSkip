@@ -6,7 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import com.shakeskip.player.ui.settings.SettingsScreen
+import androidx.navigation.compose.rememberNavController
+import com.shakeskip.player.ui.ShakeSkipNavHost
 import com.shakeskip.player.ui.theme.ShakeSkipTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -16,8 +17,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             ShakeSkipTheme {
+                val navController = rememberNavController()
+
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    SettingsScreen(onNavigateBack = { finish() })
+                    ShakeSkipNavHost(navController = navController)
                 }
             }
         }
