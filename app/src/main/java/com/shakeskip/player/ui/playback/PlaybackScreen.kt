@@ -33,7 +33,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -58,6 +57,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.Role
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.shakeskip.player.data.model.Song
@@ -180,15 +180,15 @@ private fun PlaybackContent(
         verticalArrangement = Arrangement.spacedBy(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            AlbumArtPlaceholder()
-            SongDetails(song = song)
-            shakeIndicator()
-        }
+        MainControlsSection(
+            song = song,
+            isPlaying = isPlaying,
+            onTogglePlay = onTogglePlay,
+            onSkipNext = onSkipNext,
+            onSkipPrevious = onSkipPrevious,
+            shakeIndicator = shakeIndicator,
+            showShakeHint = showShakeHint
+        )
 
         SongLibrarySection(
             modifier = Modifier
@@ -202,14 +202,6 @@ private fun PlaybackContent(
             onSongSelected = onSongSelected,
             onRequestPermission = onRequestPermission,
             onRefresh = onRefreshSongs
-        )
-
-        PlaybackControls(
-            isPlaying = isPlaying,
-            onTogglePlay = onTogglePlay,
-            onSkipNext = onSkipNext,
-            onSkipPrevious = onSkipPrevious,
-            showShakeHint = showShakeHint
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -388,22 +380,23 @@ private fun SongRow(
 }
 
 @Composable
-private fun PlaybackControls(
+private fun MainControlsSection(
+    song: Song?,
     isPlaying: Boolean,
     onTogglePlay: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
+    shakeIndicator: @Composable () -> Unit,
     showShakeHint: Boolean
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Row(
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onSkipPrevious) {
                 Icon(
@@ -412,15 +405,10 @@ private fun PlaybackControls(
                 )
             }
 
-            FilledIconButton(
-                onClick = onTogglePlay,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (isPlaying) "Pause" else "Play"
-                )
-            }
+            LargePlaybackButton(
+                isPlaying = isPlaying,
+                onTogglePlay = onTogglePlay
+            )
 
             IconButton(onClick = onSkipNext) {
                 Icon(
@@ -430,6 +418,10 @@ private fun PlaybackControls(
             }
         }
 
+        SongDetails(song = song)
+
+        shakeIndicator()
+
         if (showShakeHint) {
             ShakeGestureHint()
         }
@@ -437,7 +429,10 @@ private fun PlaybackControls(
 }
 
 @Composable
-private fun AlbumArtPlaceholder() {
+private fun LargePlaybackButton(
+    isPlaying: Boolean,
+    onTogglePlay: () -> Unit
+) {
     Box(
         modifier = Modifier
             .size(220.dp)
@@ -449,12 +444,13 @@ private fun AlbumArtPlaceholder() {
                         MaterialTheme.colorScheme.secondaryContainer
                     )
                 )
-            ),
+            )
+            .clickable(onClick = onTogglePlay, role = Role.Button),
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            imageVector = Icons.Default.PlayArrow,
-            contentDescription = null,
+            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+            contentDescription = if (isPlaying) "Pause playback" else "Start playback",
             modifier = Modifier.size(96.dp),
             tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
         )

@@ -71,18 +71,21 @@ class PlaybackViewModel @Inject constructor(
         viewModelScope.launch {
             shakePreferencesManager.shakeSettings.collect { settings ->
                 _shakeSettings.value = settings
-                
-                // Update shake detector if service is available
-                shakeDetectionService?.let { service ->
-                    service.setShakeThreshold(settings.sensitivity)
-                    
-                    if (settings.isEnabled && _isPlaying.value) {
-                        service.startShakeDetection()
-                    } else if (!settings.isEnabled) {
-                        service.stopShakeDetection()
-                    }
-                }
+                applyShakeSettingsToService()
             }
+        }
+    }
+
+    private fun applyShakeSettingsToService(service: ShakeDetectionService? = shakeDetectionService) {
+        val detectionService = service ?: return
+        val settings = _shakeSettings.value
+
+        detectionService.setShakeThreshold(settings.sensitivity)
+
+        if (settings.isEnabled) {
+            detectionService.startShakeDetection()
+        } else {
+            detectionService.stopShakeDetection()
         }
     }
     
@@ -122,13 +125,7 @@ class PlaybackViewModel @Inject constructor(
                 }
                 
                 // Apply current settings
-                detectionService.setShakeThreshold(_shakeSettings.value.sensitivity)
-                
-                // Start detection if enabled and music is playing
-                if (_shakeSettings.value.isEnabled && _isPlaying.value) {
-                    detectionService.startShakeDetection()
-                    _isShakeDetectionActive.value = true
-                }
+                applyShakeSettingsToService(detectionService)
                 
                 // Monitor shake detection state
                 viewModelScope.launch {
@@ -227,11 +224,8 @@ class PlaybackViewModel @Inject constructor(
     fun togglePlayPause() {
         _isPlaying.value = !_isPlaying.value
         
-        // Manage shake detection based on playback state
-        if (_isPlaying.value && _shakeSettings.value.isEnabled) {
+        if (_shakeSettings.value.isEnabled) {
             shakeDetectionService?.startShakeDetection()
-        } else {
-            shakeDetectionService?.stopShakeDetection()
         }
     }
     
