@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import com.shakeskip.player.data.model.Song
 import com.shakeskip.player.data.preferences.ShakePreferencesManager
 import com.shakeskip.player.data.preferences.ShakeSettings
+import com.shakeskip.player.data.repository.SongRepository
 import com.shakeskip.player.sensor.ShakeDetectionService
 import com.shakeskip.player.service.MusicPlaybackService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -27,7 +28,8 @@ import javax.inject.Inject
 @HiltViewModel
 class PlaybackViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val shakePreferencesManager: ShakePreferencesManager
+    private val shakePreferencesManager: ShakePreferencesManager,
+    private val songRepository: SongRepository
 ) : ViewModel() {
     
     private var playbackService: MusicPlaybackService? = null
@@ -47,6 +49,15 @@ class PlaybackViewModel @Inject constructor(
     
     private val _isShakeDetectionActive = MutableStateFlow(false)
     val isShakeDetectionActive: StateFlow<Boolean> = _isShakeDetectionActive.asStateFlow()
+
+    private val _songs = MutableStateFlow<List<Song>>(emptyList())
+    val songs: StateFlow<List<Song>> = _songs.asStateFlow()
+
+    private val _isLoadingSongs = MutableStateFlow(false)
+    val isLoadingSongs: StateFlow<Boolean> = _isLoadingSongs.asStateFlow()
+
+    private val _songErrorMessage = MutableStateFlow<String?>(null)
+    val songErrorMessage: StateFlow<String?> = _songErrorMessage.asStateFlow()
     
     private var isPlaybackServiceBound = false
     private var isShakeServiceBound = false
@@ -144,6 +155,35 @@ class PlaybackViewModel @Inject constructor(
         val shakeIntent = Intent(context, ShakeDetectionService::class.java)
         context.bindService(shakeIntent, shakeDetectionConnection, Context.BIND_AUTO_CREATE)
     }
+
+    /**
+     * Loads songs from device storage. Requires the caller to have already requested permission.
+     */
+    fun loadSongs(forceRefresh: Boolean = false) {
+        if (_isLoadingSongs.value) return
+        if (_songs.value.isNotEmpty() && !forceRefresh) return
+
+        viewModelScope.launch {
+            _isLoadingSongs.value = true
+            _songErrorMessage.value = null
+            try {
+                val loaded = songRepository.loadSongs()
+                _songs.value = loaded
+
+                if (_currentSong.value == null && loaded.isNotEmpty()) {
+                    _currentSong.value = loaded.first()
+                }
+            } catch (security: SecurityException) {
+                Log.w(TAG, "Audio permission missing", security)
+                _songErrorMessage.value = "Permission required to access your music."
+            } catch (t: Throwable) {
+                Log.e(TAG, "Failed to load songs", t)
+                _songErrorMessage.value = "Unable to load songs. Please try again."
+            } finally {
+                _isLoadingSongs.value = false
+            }
+        }
+    }
     
     /**
      * Plays a song
@@ -157,6 +197,13 @@ class PlaybackViewModel @Inject constructor(
         if (_shakeSettings.value.isEnabled) {
             shakeDetectionService?.startShakeDetection()
         }
+    }
+
+    /**
+     * Updates current selection and starts playback.
+     */
+    fun selectSong(song: Song) {
+        playSong(song)
     }
     
     /**
