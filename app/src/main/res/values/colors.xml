@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="md_theme_light_primary">#6750A4</color>
+    <color name="md_theme_light_onPrimary">#FFFFFF</color>
+    <color name="md_theme_light_primaryContainer">#EADDFF</color>
+    <color name="md_theme_light_onPrimaryContainer">#21005D</color>
+    <color name="md_theme_dark_primary">#D0BCFF</color>
+    <color name="md_theme_dark_onPrimary">#371E73</color>
+    <color name="md_theme_dark_primaryContainer">#4F378A</color>
+    <color name="md_theme_dark_onPrimaryContainer">#EADDFF</color>
+    <color name="shake_indicator_enabled">#FF6750A4</color>
+</resources>

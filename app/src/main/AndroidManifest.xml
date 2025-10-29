@@ -1,7 +1,6 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Permissions -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
@@ -14,13 +13,12 @@
     <application
         android:name=".ShakeSkipApplication"
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/ic_music_note"
         android:label="@string/app_name"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="@drawable/ic_music_note"
         android:supportsRtl="true"
         android:theme="@style/Theme.ShakeSkipPlayer">
-        
-        <!-- Main Activity -->
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -31,20 +29,15 @@
             </intent-filter>
         </activity>
 
-        <!-- Music Playback Service -->
         <service
             android:name=".service.MusicPlaybackService"
-            android:foregroundServiceType="mediaPlayback"
-            android:exported="false">
-        </service>
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
-        <!-- Shake Detection Service -->
         <service
             android:name=".sensor.ShakeDetectionService"
-            android:exported="false">
-        </service>
+            android:exported="false" />
 
-        <!-- Media Button Receiver -->
         <receiver
             android:name="androidx.media3.session.MediaButtonReceiver"
             android:exported="true">

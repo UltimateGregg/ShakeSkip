@@ -1,0 +1,17 @@
+﻿*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+/captures/
+.externalNativeBuild/
+app/build/
+*.log
+.gradle/6.*/
+.gradle/7.*/
+.gradle/8.*/
+**/build/
+*.apk
+*.aab
+.cxx/
