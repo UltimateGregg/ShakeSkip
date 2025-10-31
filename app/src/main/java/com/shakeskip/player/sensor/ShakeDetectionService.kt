@@ -12,9 +12,15 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Log
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 /**
  * Service that manages shake detection for the music player.
@@ -29,19 +35,25 @@ class ShakeDetectionService : Service() {
     private var vibrator: Vibrator? = null
     
     private val binder = ShakeDetectionBinder()
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     
     private val _isShakeDetectionEnabled = MutableStateFlow(false)
     val isShakeDetectionEnabled: StateFlow<Boolean> = _isShakeDetectionEnabled.asStateFlow()
     
     private val _shakeCount = MutableStateFlow(0)
     val shakeCount: StateFlow<Int> = _shakeCount.asStateFlow()
+
+    private val _isShakingNow = MutableStateFlow(false)
+    val isShakingNow: StateFlow<Boolean> = _isShakingNow.asStateFlow()
     
     private var shakeCallback: (() -> Unit)? = null
+    private var shakeVisualJob: Job? = null
     
     companion object {
         private const val TAG = "ShakeDetectionService"
         private const val SAMPLING_RATE = SensorManager.SENSOR_DELAY_GAME // ~50-100Hz
         private const val VIBRATION_DURATION_MS = 50L
+        private const val SHAKE_VISUAL_DURATION_MS = 900L
     }
     
     inner class ShakeDetectionBinder : Binder() {
@@ -117,6 +129,8 @@ class ShakeDetectionService : Service() {
         
         sensorManager.unregisterListener(shakeDetector)
         _isShakeDetectionEnabled.value = false
+        shakeVisualJob?.cancel()
+        _isShakingNow.value = false
         Log.d(TAG, "Shake detection stopped")
     }
     
@@ -139,16 +153,21 @@ class ShakeDetectionService : Service() {
      * Handles shake detection events
      */
     private fun handleShakeDetected() {
-        Log.d(TAG, "Shake detected - triggering callback")
-        
-        // Increment shake count for statistics
-        _shakeCount.value++
-        
-        // Provide haptic feedback
-        provideHapticFeedback()
-        
-        // Trigger the callback
-        shakeCallback?.invoke()
+        serviceScope.launch {
+            Log.d(TAG, "Shake detected - triggering callback")
+            
+            _shakeCount.value++
+            provideHapticFeedback()
+            
+            shakeVisualJob?.cancel()
+            _isShakingNow.value = true
+            shakeVisualJob = launch {
+                delay(SHAKE_VISUAL_DURATION_MS)
+                _isShakingNow.value = false
+            }
+            
+            shakeCallback?.invoke()
+        }
     }
     
     /**
@@ -179,6 +198,8 @@ class ShakeDetectionService : Service() {
     override fun onDestroy() {
         stopShakeDetection()
         shakeDetector.reset()
+        shakeVisualJob?.cancel()
+        serviceScope.cancel()
         super.onDestroy()
         Log.d(TAG, "ShakeDetectionService destroyed")
     }

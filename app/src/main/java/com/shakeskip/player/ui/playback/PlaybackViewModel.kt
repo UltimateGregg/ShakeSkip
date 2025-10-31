@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import android.util.Log
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.shakeskip.player.data.model.Song
@@ -16,6 +17,7 @@ import com.shakeskip.player.sensor.ShakeDetectionService
 import com.shakeskip.player.service.MusicPlaybackService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -50,6 +52,9 @@ class PlaybackViewModel @Inject constructor(
     private val _isShakeDetectionActive = MutableStateFlow(false)
     val isShakeDetectionActive: StateFlow<Boolean> = _isShakeDetectionActive.asStateFlow()
 
+    private val _isDeviceShaking = MutableStateFlow(false)
+    val isDeviceShaking: StateFlow<Boolean> = _isDeviceShaking.asStateFlow()
+
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
     val songs: StateFlow<List<Song>> = _songs.asStateFlow()
 
@@ -61,6 +66,8 @@ class PlaybackViewModel @Inject constructor(
     
     private var isPlaybackServiceBound = false
     private var isShakeServiceBound = false
+    private val playbackServiceJobs = mutableListOf<Job>()
+    private val shakeServiceJobs = mutableListOf<Job>()
     
     companion object {
         private const val TAG = "PlaybackViewModel"
@@ -94,15 +101,50 @@ class PlaybackViewModel @Inject constructor(
      */
     private val playbackConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            // This would be implemented if we made MusicPlaybackService bindable
-            Log.d(TAG, "Playback service connected")
+            val binder = service as? MusicPlaybackService.PlaybackBinder
+            val boundService = binder?.getService()
+
+            if (boundService == null) {
+                Log.w(TAG, "Failed to obtain playback service binder")
+                return
+            }
+
+            playbackService = boundService
             isPlaybackServiceBound = true
+            Log.d(TAG, "Playback service connected")
+            observePlaybackService(boundService)
         }
         
         override fun onServiceDisconnected(name: ComponentName?) {
+            Log.d(TAG, "Playback service disconnected")
+            playbackServiceJobs.forEach { it.cancel() }
+            playbackServiceJobs.clear()
             playbackService = null
             isPlaybackServiceBound = false
-            Log.d(TAG, "Playback service disconnected")
+            _isPlaying.value = false
+        }
+    }
+
+    private fun observePlaybackService(service: MusicPlaybackService) {
+        playbackServiceJobs.forEach { it.cancel() }
+        playbackServiceJobs.clear()
+
+        playbackServiceJobs += viewModelScope.launch {
+            service.currentSong.collect { song ->
+                _currentSong.value = song
+            }
+        }
+
+        playbackServiceJobs += viewModelScope.launch {
+            service.isPlaying.collect { playing ->
+                _isPlaying.value = playing
+            }
+        }
+
+        playbackServiceJobs += viewModelScope.launch {
+            service.currentPosition.collect { position ->
+                _currentPosition.value = position
+            }
         }
     }
     
@@ -118,29 +160,46 @@ class PlaybackViewModel @Inject constructor(
                 Log.d(TAG, "Shake detection service connected")
                 isShakeServiceBound = true
                 
-                // Set up shake callback to skip to next track
+                // Set up shake callback to trigger CD skip effect
                 detectionService.setShakeCallback {
-                    Log.d(TAG, "Shake detected - skipping to next track")
-                    skipToNext()
+                    Log.d(TAG, "Shake detected - triggering CD skip effect")
+                    handleShakeDetected()
                 }
                 
                 // Apply current settings
                 applyShakeSettingsToService(detectionService)
                 
                 // Monitor shake detection state
-                viewModelScope.launch {
+                shakeServiceJobs += viewModelScope.launch {
                     detectionService.isShakeDetectionEnabled.collect { enabled ->
                         _isShakeDetectionActive.value = enabled
+                    }
+                }
+
+                shakeServiceJobs += viewModelScope.launch {
+                    detectionService.isShakingNow.collect { isShaking ->
+                        _isDeviceShaking.value = isShaking
                     }
                 }
             }
         }
         
         override fun onServiceDisconnected(name: ComponentName?) {
+            Log.d(TAG, "Shake detection service disconnected")
+            shakeServiceJobs.forEach { it.cancel() }
+            shakeServiceJobs.clear()
             shakeDetectionService = null
             isShakeServiceBound = false
             _isShakeDetectionActive.value = false
-            Log.d(TAG, "Shake detection service disconnected")
+            _isDeviceShaking.value = false
+        }
+    }
+
+    private fun handleShakeDetected() {
+        if (playbackService != null) {
+            playbackService?.simulateCdSkip()
+        } else {
+            Log.w(TAG, "Shake detected but playback service is not bound")
         }
     }
     
@@ -148,9 +207,35 @@ class PlaybackViewModel @Inject constructor(
      * Binds to both playback and shake detection services
      */
     fun bindServices() {
+        // Start and bind to playback service
+        val playbackStartIntent = Intent(context, MusicPlaybackService::class.java)
+        ContextCompat.startForegroundService(context, playbackStartIntent)
+
+        val playbackBindIntent = Intent(context, MusicPlaybackService::class.java).apply {
+            action = MusicPlaybackService.ACTION_BIND_LOCAL
+        }
+
+        val playbackBound = context.bindService(
+            playbackBindIntent,
+            playbackConnection,
+            Context.BIND_AUTO_CREATE
+        )
+
+        if (!playbackBound) {
+            Log.w(TAG, "Unable to bind to playback service")
+        }
+
         // Bind to shake detection service
         val shakeIntent = Intent(context, ShakeDetectionService::class.java)
-        context.bindService(shakeIntent, shakeDetectionConnection, Context.BIND_AUTO_CREATE)
+        val shakeBound = context.bindService(
+            shakeIntent,
+            shakeDetectionConnection,
+            Context.BIND_AUTO_CREATE
+        )
+
+        if (!shakeBound) {
+            Log.w(TAG, "Unable to bind to shake detection service")
+        }
     }
 
     /**
@@ -186,9 +271,19 @@ class PlaybackViewModel @Inject constructor(
      * Plays a song
      */
     fun playSong(song: Song) {
-        // This would interact with the playback service
-        _currentSong.value = song
-        _isPlaying.value = true
+        val playlist = _songs.value
+        val targetIndex = playlist.indexOfFirst { it.id == song.id }.takeIf { it >= 0 } ?: 0
+
+        if (playbackService != null) {
+            if (playlist.isNotEmpty()) {
+                playbackService?.playSongs(playlist, targetIndex)
+            } else {
+                playbackService?.playSong(song)
+            }
+        } else {
+            _currentSong.value = song
+            _isPlaying.value = true
+        }
         
         // Start shake detection if enabled
         if (_shakeSettings.value.isEnabled) {
@@ -209,8 +304,13 @@ class PlaybackViewModel @Inject constructor(
     fun playSongs(songs: List<Song>, startIndex: Int = 0) {
         if (songs.isEmpty()) return
         
-        _currentSong.value = songs.getOrNull(startIndex)
-        _isPlaying.value = true
+        if (playbackService != null) {
+            playbackService?.playSongs(songs, startIndex)
+        } else {
+            val index = startIndex.coerceIn(songs.indices)
+            _currentSong.value = songs.getOrNull(index)
+            _isPlaying.value = true
+        }
         
         // Start shake detection if enabled
         if (_shakeSettings.value.isEnabled) {
@@ -222,8 +322,12 @@ class PlaybackViewModel @Inject constructor(
      * Toggles play/pause
      */
     fun togglePlayPause() {
-        _isPlaying.value = !_isPlaying.value
-        
+        if (playbackService != null) {
+            playbackService?.togglePlayPause()
+        } else {
+            _isPlaying.value = !_isPlaying.value
+        }
+
         if (_shakeSettings.value.isEnabled) {
             shakeDetectionService?.startShakeDetection()
         }
@@ -234,8 +338,19 @@ class PlaybackViewModel @Inject constructor(
      */
     fun skipToNext() {
         Log.d(TAG, "Skipping to next track")
-        // This would call playbackService?.skipToNext()
-        // For now, we'll just log it
+        if (playbackService != null) {
+            playbackService?.skipToNext()
+        } else {
+            val playlist = _songs.value
+            if (playlist.isEmpty()) return
+            val currentIndex = playlist.indexOfFirst { it.id == _currentSong.value?.id }
+            val nextIndex = if (currentIndex in playlist.indices) {
+                (currentIndex + 1) % playlist.size
+            } else {
+                0
+            }
+            _currentSong.value = playlist[nextIndex]
+        }
     }
     
     /**
@@ -243,7 +358,19 @@ class PlaybackViewModel @Inject constructor(
      */
     fun skipToPrevious() {
         Log.d(TAG, "Skipping to previous track")
-        // This would call playbackService?.skipToPrevious()
+        if (playbackService != null) {
+            playbackService?.skipToPrevious()
+        } else {
+            val playlist = _songs.value
+            if (playlist.isEmpty()) return
+            val currentIndex = playlist.indexOfFirst { it.id == _currentSong.value?.id }
+            val previousIndex = if (currentIndex in playlist.indices) {
+                if (currentIndex - 1 < 0) playlist.lastIndex else currentIndex - 1
+            } else {
+                playlist.lastIndex
+            }
+            _currentSong.value = playlist[previousIndex]
+        }
     }
     
     /**
@@ -274,6 +401,11 @@ class PlaybackViewModel @Inject constructor(
     
     override fun onCleared() {
         // Unbind services
+        shakeServiceJobs.forEach { it.cancel() }
+        shakeServiceJobs.clear()
+        playbackServiceJobs.forEach { it.cancel() }
+        playbackServiceJobs.clear()
+        
         if (isShakeServiceBound) {
             context.unbindService(shakeDetectionConnection)
             isShakeServiceBound = false
