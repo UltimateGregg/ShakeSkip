@@ -45,6 +45,9 @@ class PlaybackViewModel @Inject constructor(
     
     private val _currentPosition = MutableStateFlow(0L)
     val currentPosition: StateFlow<Long> = _currentPosition.asStateFlow()
+
+    private val _volume = MutableStateFlow(1f)
+    val volume: StateFlow<Float> = _volume.asStateFlow()
     
     private val _shakeSettings = MutableStateFlow(ShakeSettings())
     val shakeSettings: StateFlow<ShakeSettings> = _shakeSettings.asStateFlow()
@@ -113,6 +116,7 @@ class PlaybackViewModel @Inject constructor(
             isPlaybackServiceBound = true
             Log.d(TAG, "Playback service connected")
             observePlaybackService(boundService)
+            boundService.setVolume(_volume.value)
         }
         
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -122,6 +126,7 @@ class PlaybackViewModel @Inject constructor(
             playbackService = null
             isPlaybackServiceBound = false
             _isPlaying.value = false
+            _volume.value = 1f
         }
     }
 
@@ -144,6 +149,12 @@ class PlaybackViewModel @Inject constructor(
         playbackServiceJobs += viewModelScope.launch {
             service.currentPosition.collect { position ->
                 _currentPosition.value = position
+            }
+        }
+
+        playbackServiceJobs += viewModelScope.launch {
+            service.volume.collect { level ->
+                _volume.value = level
             }
         }
     }
@@ -370,6 +381,15 @@ class PlaybackViewModel @Inject constructor(
                 playlist.lastIndex
             }
             _currentSong.value = playlist[previousIndex]
+        }
+    }
+
+    fun setVolume(level: Float) {
+        val clamped = level.coerceIn(0f, 1f)
+        if (playbackService != null) {
+            playbackService?.setVolume(clamped)
+        } else {
+            _volume.value = clamped
         }
     }
     

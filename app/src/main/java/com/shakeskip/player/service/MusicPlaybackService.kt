@@ -50,8 +50,12 @@ class MusicPlaybackService : MediaSessionService() {
     private val _currentPosition = MutableStateFlow(0L)
     val currentPosition: StateFlow<Long> = _currentPosition.asStateFlow()
 
+    private val _volume = MutableStateFlow(1f)
+    val volume: StateFlow<Float> = _volume.asStateFlow()
+
     private var currentQueue: List<Song> = emptyList()
     private var skipSimulationJob: Job? = null
+    private var userVolume: Float = 1f
 
     companion object {
         private const val NOTIFICATION_ID = 1
@@ -75,6 +79,7 @@ class MusicPlaybackService : MediaSessionService() {
                 exoPlayer.addListener(playerListener)
             }
 
+        setPlayerVolume(player.volume)
         mediaSession = MediaSession.Builder(this, player)
             .build()
     }
@@ -119,6 +124,7 @@ class MusicPlaybackService : MediaSessionService() {
         val mediaItem = song.toMediaItem()
         player.setMediaItem(mediaItem)
         player.prepare()
+        setPlayerVolume(userVolume)
         player.play()
         _currentSong.value = song
     }
@@ -133,6 +139,7 @@ class MusicPlaybackService : MediaSessionService() {
             0
         )
         player.prepare()
+        setPlayerVolume(userVolume)
         player.play()
 
         if (startIndex in songs.indices) {
@@ -178,6 +185,13 @@ class MusicPlaybackService : MediaSessionService() {
 
     fun getDuration(): Long = player.duration
 
+    fun setVolume(volume: Float) {
+        val clamped = volume.coerceIn(0f, 1f)
+        skipSimulationJob?.cancel()
+        userVolume = clamped
+        setPlayerVolume(clamped)
+    }
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
@@ -217,15 +231,17 @@ class MusicPlaybackService : MediaSessionService() {
         if (!::player.isInitialized) return
 
         skipSimulationJob?.cancel()
-        skipSimulationJob = serviceScope.launch {
+        setPlayerVolume(userVolume)
+
+        val baselineVolume = userVolume
+        val job = serviceScope.launch {
             val wasPlaying = player.isPlaying
-            val originalVolume = player.volume
 
             if (wasPlaying) {
                 player.pause()
             }
 
-            player.volume = 0f
+            setPlayerVolume(0f)
 
             val safeDuration = player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: Long.MAX_VALUE
             val currentPosition = player.currentPosition
@@ -243,15 +259,26 @@ class MusicPlaybackService : MediaSessionService() {
                 player.play()
             }
 
-            // Bring the volume back in a few quick steps to imitate audio wobble.
-            val rampLevels = listOf(0.0f, 0.25f, 0.5f, 0.8f, 1f)
-            rampLevels.forEachIndexed { index, level ->
+            val rampVolumes = listOf(
+                0f,
+                baselineVolume * 0.35f,
+                baselineVolume * 0.7f,
+                baselineVolume
+            )
+
+            rampVolumes.forEachIndexed { index, volumeLevel ->
                 if (index != 0) {
-                    delay(130)
+                    delay(120)
                 }
-                player.volume = originalVolume * level
+                setPlayerVolume(volumeLevel)
             }
         }
+
+        job.invokeOnCompletion {
+            setPlayerVolume(userVolume)
+        }
+
+        skipSimulationJob = job
     }
 
     override fun onDestroy() {
@@ -260,6 +287,11 @@ class MusicPlaybackService : MediaSessionService() {
         player.release()
         serviceScope.cancel()
         super.onDestroy()
+    }
+
+    private fun setPlayerVolume(volume: Float) {
+        player.volume = volume
+        _volume.value = volume
     }
 
     private fun Song.toMediaItem(): MediaItem {

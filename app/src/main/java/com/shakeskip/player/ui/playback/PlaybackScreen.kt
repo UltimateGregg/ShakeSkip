@@ -38,6 +38,7 @@ import androidx.compose.material3.LargeFloatingActionButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -60,6 +61,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.shakeskip.player.data.model.Song
 import com.shakeskip.player.ui.components.ShakeGestureHint
 import com.shakeskip.player.ui.components.ShakeIndicator
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,8 +72,8 @@ fun PlaybackScreen(
     val currentSong by viewModel.currentSong.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val shakeSettings by viewModel.shakeSettings.collectAsState()
-    val isShakeDetectionActive by viewModel.isShakeDetectionActive.collectAsState()
     val isDeviceShaking by viewModel.isDeviceShaking.collectAsState()
+    val volume by viewModel.volume.collectAsState()
     val songs by viewModel.songs.collectAsState()
     val isLoadingSongs by viewModel.isLoadingSongs.collectAsState()
     val songError by viewModel.songErrorMessage.collectAsState()
@@ -141,10 +143,11 @@ fun PlaybackScreen(
             isLoadingSongs = isLoadingSongs,
             songError = songError,
             hasAudioPermission = hasPermission,
+            volume = volume,
+            onVolumeChange = { viewModel.setVolume(it) },
             shakeIndicator = {
                 ShakeIndicator(
                     isEnabled = shakeSettings.isEnabled,
-                    isDetectionRunning = isShakeDetectionActive,
                     isShaking = isDeviceShaking
                 )
             },
@@ -174,6 +177,8 @@ private fun PlaybackContent(
     isLoadingSongs: Boolean,
     songError: String?,
     hasAudioPermission: Boolean,
+    volume: Float,
+    onVolumeChange: (Float) -> Unit,
     shakeIndicator: @Composable () -> Unit,
     shakeHint: @Composable () -> Unit,
     showShakeHint: Boolean
@@ -192,6 +197,8 @@ private fun PlaybackContent(
             onTogglePlay = onTogglePlay,
             onSkipNext = onSkipNext,
             onSkipPrevious = onSkipPrevious,
+            volume = volume,
+            onVolumeChange = onVolumeChange,
             shakeIndicator = shakeIndicator,
             shakeHint = shakeHint,
             showShakeHint = showShakeHint
@@ -393,6 +400,8 @@ private fun MainControlsSection(
     onTogglePlay: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
+    volume: Float,
+    onVolumeChange: (Float) -> Unit,
     shakeIndicator: @Composable () -> Unit,
     shakeHint: @Composable () -> Unit,
     showShakeHint: Boolean
@@ -437,6 +446,11 @@ private fun MainControlsSection(
                 }
             }
 
+            VolumeControl(
+                volume = volume,
+                onVolumeChange = onVolumeChange
+            )
+
             shakeIndicator()
 
             if (showShakeHint) {
@@ -460,6 +474,37 @@ private fun LargePlaybackButton(
             imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
             contentDescription = if (isPlaying) "Pause playback" else "Start playback",
             modifier = Modifier.size(36.dp)
+        )
+    }
+}
+
+@Composable
+private fun VolumeControl(
+    volume: Float,
+    onVolumeChange: (Float) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "Volume",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Slider(
+            value = volume,
+            onValueChange = onVolumeChange,
+            valueRange = 0f..1f,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Text(
+            text = "${(volume * 100).roundToInt()}%",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
