@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
@@ -71,9 +72,13 @@ class PlaybackViewModel @Inject constructor(
     private var isShakeServiceBound = false
     private val playbackServiceJobs = mutableListOf<Job>()
     private val shakeServiceJobs = mutableListOf<Job>()
+    private var consecutiveShakeCount = 0
+    private var lastShakeTimestamp = 0L
     
     companion object {
         private const val TAG = "PlaybackViewModel"
+        private const val SHAKE_BUFFER_WINDOW_MS = 1500L
+        private const val REQUIRED_SHAKE_COUNT = 2
     }
     
     init {
@@ -96,6 +101,7 @@ class PlaybackViewModel @Inject constructor(
             detectionService.startShakeDetection()
         } else {
             detectionService.stopShakeDetection()
+            resetShakeBuffer()
         }
     }
     
@@ -203,14 +209,29 @@ class PlaybackViewModel @Inject constructor(
             isShakeServiceBound = false
             _isShakeDetectionActive.value = false
             _isDeviceShaking.value = false
+            resetShakeBuffer()
         }
     }
 
     private fun handleShakeDetected() {
-        if (playbackService != null) {
-            playbackService?.simulateCdSkip()
+        val now = SystemClock.elapsedRealtime()
+        val withinWindow = now - lastShakeTimestamp <= SHAKE_BUFFER_WINDOW_MS
+        consecutiveShakeCount = if (withinWindow) {
+            consecutiveShakeCount + 1
         } else {
-            Log.w(TAG, "Shake detected but playback service is not bound")
+            1
+        }
+        lastShakeTimestamp = now
+
+        if (consecutiveShakeCount >= REQUIRED_SHAKE_COUNT) {
+            consecutiveShakeCount = 0
+            if (playbackService != null) {
+                playbackService?.simulateCdSkip()
+            } else {
+                Log.w(TAG, "Shake detected but playback service is not bound")
+            }
+        } else {
+            Log.d(TAG, "Buffered shake: $consecutiveShakeCount/$REQUIRED_SHAKE_COUNT")
         }
     }
     
@@ -333,9 +354,28 @@ class PlaybackViewModel @Inject constructor(
      * Toggles play/pause
      */
     fun togglePlayPause() {
-        if (playbackService != null) {
-            playbackService?.togglePlayPause()
+        val playlist = _songs.value
+        val service = playbackService
+
+        if (service != null) {
+            val serviceCurrent = service.currentSong.value
+            if (serviceCurrent == null) {
+                if (playlist.isEmpty()) {
+                    Log.w(TAG, "No songs available to start playback")
+                    return
+                }
+                val targetSong = _currentSong.value ?: playlist.first()
+                val startIndex = playlist.indexOfFirst { it.id == targetSong.id }
+                    .takeIf { it >= 0 } ?: 0
+                _currentSong.value = playlist[startIndex]
+                service.playSongs(playlist, startIndex)
+            } else {
+                service.togglePlayPause()
+            }
         } else {
+            if (_currentSong.value == null && playlist.isNotEmpty()) {
+                _currentSong.value = playlist.first()
+            }
             _isPlaying.value = !_isPlaying.value
         }
 
@@ -436,6 +476,12 @@ class PlaybackViewModel @Inject constructor(
             isPlaybackServiceBound = false
         }
         
+        resetShakeBuffer()
         super.onCleared()
+    }
+
+    private fun resetShakeBuffer() {
+        consecutiveShakeCount = 0
+        lastShakeTimestamp = 0L
     }
 }

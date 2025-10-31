@@ -79,7 +79,8 @@ class MusicPlaybackService : MediaSessionService() {
                 exoPlayer.addListener(playerListener)
             }
 
-        setPlayerVolume(player.volume)
+        userVolume = player.volume
+        setPlayerVolume(userVolume)
         mediaSession = MediaSession.Builder(this, player)
             .build()
     }
