@@ -60,7 +60,6 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.shakeskip.player.data.model.Song
 import com.shakeskip.player.ui.components.ShakeGestureHint
-import com.shakeskip.player.ui.components.ShakeIndicator
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -145,12 +144,6 @@ fun PlaybackScreen(
             hasAudioPermission = hasPermission,
             volume = volume,
             onVolumeChange = { viewModel.setVolume(it) },
-            shakeIndicator = {
-                ShakeIndicator(
-                    isEnabled = shakeSettings.isEnabled,
-                    isShaking = isDeviceShaking
-                )
-            },
             shakeHint = {
                 ShakeGestureHint(
                     isDetectionEnabled = shakeSettings.isEnabled,
@@ -179,7 +172,6 @@ private fun PlaybackContent(
     hasAudioPermission: Boolean,
     volume: Float,
     onVolumeChange: (Float) -> Unit,
-    shakeIndicator: @Composable () -> Unit,
     shakeHint: @Composable () -> Unit,
     showShakeHint: Boolean
 ) {
@@ -199,7 +191,6 @@ private fun PlaybackContent(
             onSkipPrevious = onSkipPrevious,
             volume = volume,
             onVolumeChange = onVolumeChange,
-            shakeIndicator = shakeIndicator,
             shakeHint = shakeHint,
             showShakeHint = showShakeHint
         )
@@ -402,7 +393,6 @@ private fun MainControlsSection(
     onSkipPrevious: () -> Unit,
     volume: Float,
     onVolumeChange: (Float) -> Unit,
-    shakeIndicator: @Composable () -> Unit,
     shakeHint: @Composable () -> Unit,
     showShakeHint: Boolean
 ) {
@@ -450,8 +440,6 @@ private fun MainControlsSection(
                 volume = volume,
                 onVolumeChange = onVolumeChange
             )
-
-            shakeIndicator()
 
             if (showShakeHint) {
                 shakeHint()
